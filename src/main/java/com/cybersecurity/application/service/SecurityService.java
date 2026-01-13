@@ -4,21 +4,28 @@ import com.cybersecurity.application.models.IpBlacklist;
 import com.cybersecurity.application.models.SecurityLog;
 import com.cybersecurity.application.repository.IpBlacklistRepository;
 import com.cybersecurity.application.repository.SecurityLogRepository;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
+@RequiredArgsConstructor
 @Service
 public class SecurityService {
 
     @Autowired
-    private SecurityLogRepository logRepo;
+    private final SecurityLogRepository logRepo;
 
-    @Autowired
-    private IpBlacklistRepository blacklistRepo;
+    private final IpBlacklistRepository blacklistRepo;
+
+    private static final Logger logger = LoggerFactory.getLogger(SecurityService.class);
 
     // Map lưu tạm số lần vi phạm trong RAM (Fingerprint -> Count)
     private final ConcurrentHashMap<String, Integer> violationCounts = new ConcurrentHashMap<>();
@@ -79,7 +86,37 @@ public class SecurityService {
     }
 
     // Scheduled Task: Tự động quét DB để mở khóa sau 24h (Bạn cần thêm @EnableScheduling ở Main)
+    @Scheduled(fixedRate = 60000)
     public void unblockExpiredIps() {
-        // Logic: Tìm các IP hết hạn -> Chạy lệnh "sudo iptables -D INPUT -s <IP> -j DROP" -> Xóa khỏi DB
+        System.out.println("⏳ Scanning for expired IP bans...");
+
+        // Lấy danh sách các IP đã hết hạn tù (unblockAt < thời gian hiện tại)
+        List<IpBlacklist> expiredList = blacklistRepo.findAll(); // Tạm lấy hết rồi lọc, hoặc viết query custom "findByUnblockAtBefore"
+
+        LocalDateTime now = LocalDateTime.now();
+
+        for (IpBlacklist record : expiredList) {
+            if (record.getUnblockAt().isBefore(now)) {
+                unblockIpFirewall(record);
+            }
+        }
+    }
+
+    private void unblockIpFirewall(IpBlacklist record) {
+        try {
+            String ip = record.getIpAddress();
+
+            // Chạy lệnh xóa rule iptables (Thay -A bằng -D)
+            // Lệnh: sudo iptables -D INPUT -s <IP> -j DROP
+            ProcessBuilder pb = new ProcessBuilder("sudo", "iptables", "-D", "INPUT", "-s", ip, "-j", "DROP");
+            pb.start();
+
+            // Xóa khỏi Database
+            blacklistRepo.delete(record);
+
+            System.out.println("✅ UNBLOCKED IP: " + ip);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
