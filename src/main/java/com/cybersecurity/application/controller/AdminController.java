@@ -14,7 +14,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
-@CrossOrigin(origins = "http://localhost:3000") // Quan trọng cho Frontend
+@CrossOrigin(origins = "http://localhost:3000")
 public class AdminController {
     @Autowired
     private SecurityLogRepository logRepo;
@@ -22,14 +22,11 @@ public class AdminController {
     @Autowired
     private IpBlacklistRepository blacklistRepo;
 
-    // Xem lịch sử tấn công
     @GetMapping("/logs")
     public List<SecurityLog> getLogs() {
-        // Nên sắp xếp mới nhất lên đầu (giảm dần theo ID)
         return logRepo.findAll();
     }
 
-    // Xem danh sách đang bị chặn (Firewall Status)
     @GetMapping("/blacklist")
     public List<IpBlacklist> getBlacklist() {
         return blacklistRepo.findAll();

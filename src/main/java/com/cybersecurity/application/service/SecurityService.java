@@ -27,10 +27,8 @@ public class SecurityService {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityService.class);
 
-    // Map lưu tạm số lần vi phạm trong RAM (Fingerprint -> Count)
     private final ConcurrentHashMap<String, Integer> violationCounts = new ConcurrentHashMap<>();
 
-    // Regex phát hiện SQL Injection (Cơ bản & Nâng cao)
     private static final Pattern SQLI_PATTERN = Pattern.compile(
             "(?i)(union\\s+select|select\\s+.*\\s+from|insert\\s+into|delete\\s+from|update\\s+.*\\s+set|drop\\s+table|--|;|'\\s+or\\s+'|'\\s+and\\s+')",
             Pattern.CASE_INSENSITIVE
@@ -42,7 +40,6 @@ public class SecurityService {
     }
 
     public void logViolation(String ip, String fingerprint, String payload, String endpoint) {
-        // 1. Lưu log vào DB
         SecurityLog log = new SecurityLog();
         log.setIpAddress(ip);
         log.setFingerprint(fingerprint);
@@ -51,28 +48,22 @@ public class SecurityService {
         log.setViolationType("SQL_INJECTION");
         logRepo.save(log);
 
-        // 2. Xử lý logic 3 Strikes
         int count = violationCounts.getOrDefault(fingerprint, 0) + 1;
         violationCounts.put(fingerprint, count);
 
         if (count >= 3) {
             blockIpFirewall(ip, fingerprint);
-            violationCounts.remove(fingerprint); // Reset sau khi block
+            violationCounts.remove(fingerprint);
         }
     }
 
     private void blockIpFirewall(String ip, String fingerprint) {
-        // Kiểm tra xem đã chặn chưa
-        if (blacklistRepo.findByIpAddress(ip) == null) return;
-
+        if (blacklistRepo.findByIpAddress(ip) != null) return;
         try {
-            // A. Gọi lệnh System (Linux Iptables)
-            // Lệnh: sudo iptables -A INPUT -s <IP> -j DROP
             ProcessBuilder pb = new ProcessBuilder("sudo", "iptables", "-A", "INPUT", "-s", ip, "-j", "DROP");
             pb.start();
             System.out.println("FIREWALL BLOCKED IP: " + ip);
 
-            // B. Lưu vào DB để quản lý thời gian mở khóa (24h)
             IpBlacklist blacklist = new IpBlacklist();
             blacklist.setIpAddress(ip);
             blacklist.setFingerprint(fingerprint);
@@ -85,13 +76,11 @@ public class SecurityService {
         }
     }
 
-    // Scheduled Task: Tự động quét DB để mở khóa sau 24h (Bạn cần thêm @EnableScheduling ở Main)
     @Scheduled(fixedRate = 60000)
     public void unblockExpiredIps() {
         System.out.println("⏳ Scanning for expired IP bans...");
 
-        // Lấy danh sách các IP đã hết hạn tù (unblockAt < thời gian hiện tại)
-        List<IpBlacklist> expiredList = blacklistRepo.findAll(); // Tạm lấy hết rồi lọc, hoặc viết query custom "findByUnblockAtBefore"
+        List<IpBlacklist> expiredList = blacklistRepo.findAll();
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -106,12 +95,9 @@ public class SecurityService {
         try {
             String ip = record.getIpAddress();
 
-            // Chạy lệnh xóa rule iptables (Thay -A bằng -D)
-            // Lệnh: sudo iptables -D INPUT -s <IP> -j DROP
             ProcessBuilder pb = new ProcessBuilder("sudo", "iptables", "-D", "INPUT", "-s", ip, "-j", "DROP");
             pb.start();
 
-            // Xóa khỏi Database
             blacklistRepo.delete(record);
 
             System.out.println("✅ UNBLOCKED IP: " + ip);

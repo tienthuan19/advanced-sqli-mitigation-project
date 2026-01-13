@@ -17,9 +17,9 @@ public class SecurityLog {
     private String endpoint;
 
     @Column(columnDefinition = "TEXT")
-    private String payload; // Nội dung câu lệnh tấn công
+    private String payload;
 
-    private String violationType; // "SQL_INJECTION", "XSS"
+    private String violationType;
     private LocalDateTime timestamp;
 
     @PrePersist
