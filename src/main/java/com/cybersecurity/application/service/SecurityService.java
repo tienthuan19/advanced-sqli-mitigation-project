@@ -57,6 +57,16 @@ public class SecurityService {
         }
     }
 
+    public void logActivity(String ip, String fingerprint, String endpoint, String action) {
+        SecurityLog log = new SecurityLog();
+        log.setIpAddress(ip);
+        log.setFingerprint(fingerprint);
+        log.setEndpoint(endpoint);
+        log.setPayload(action);
+        log.setViolationType("INFO");
+        logRepo.save(log);
+    }
+
     private void blockIpFirewall(String ip, String fingerprint) {
         if (blacklistRepo.findByIpAddress(ip) != null) return;
         try {
