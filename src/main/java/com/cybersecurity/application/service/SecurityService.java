@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,18 +70,33 @@ public class SecurityService {
     }
 
     private void blockIpFirewall(String ip, String fingerprint) {
-        if (blacklistRepo.findByIpAddress(ip) != null) return;
-        try {
-            ProcessBuilder pb = new ProcessBuilder("sudo", "iptables", "-A", "INPUT", "-s", ip, "-j", "DROP");
-            pb.start();
-            System.out.println("FIREWALL BLOCKED IP: " + ip);
+        if (blacklistRepo.findByIpAddress(ip) != null) return; // Đã chặn rồi thì thôi
 
-            IpBlacklist blacklist = new IpBlacklist();
-            blacklist.setIpAddress(ip);
-            blacklist.setFingerprint(fingerprint);
-            blacklist.setBlockedAt(LocalDateTime.now());
-            blacklist.setUnblockAt(LocalDateTime.now().plusHours(24));
-            blacklistRepo.save(blacklist);
+        try {
+            ProcessBuilder pb = new ProcessBuilder("sudo", "iptables", "-I", "INPUT", "1", "-s", ip, "-j", "DROP");
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println("IPTABLES OUTPUT: " + line);
+            }
+
+            int exitCode = process.waitFor();
+            if (exitCode == 0) {
+                System.out.println("✅ FIREWALL SUCCESSFULLY BLOCKED IP: " + ip);
+
+                IpBlacklist blacklist = new IpBlacklist();
+                blacklist.setIpAddress(ip);
+                blacklist.setFingerprint(fingerprint);
+                blacklist.setBlockedAt(LocalDateTime.now());
+                blacklist.setUnblockAt(LocalDateTime.now().plusHours(24));
+                blacklistRepo.save(blacklist);
+            } else {
+                System.err.println("❌ FAILED TO BLOCK IP. Exit Code: " + exitCode);
+                System.err.println("⚠️ HINT: Try running the app with 'sudo java -jar ...'");
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -106,7 +123,8 @@ public class SecurityService {
             String ip = record.getIpAddress();
 
             ProcessBuilder pb = new ProcessBuilder("sudo", "iptables", "-D", "INPUT", "-s", ip, "-j", "DROP");
-            pb.start();
+            Process process = pb.start();
+            process.waitFor();
 
             blacklistRepo.delete(record);
 
