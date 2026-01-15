@@ -70,7 +70,7 @@ public class SecurityService {
     }
 
     private void blockIpFirewall(String ip, String fingerprint) {
-        if (blacklistRepo.findByIpAddress(ip) != null) return; // Đã chặn rồi thì thôi
+        if (blacklistRepo.findByIpAddress(ip) != null) return;
 
         try {
             ProcessBuilder pb = new ProcessBuilder("sudo", "iptables", "-I", "INPUT", "1", "-s", ip, "-j", "DROP");
@@ -85,7 +85,7 @@ public class SecurityService {
 
             int exitCode = process.waitFor();
             if (exitCode == 0) {
-                System.out.println("✅ FIREWALL SUCCESSFULLY BLOCKED IP: " + ip);
+                System.out.println("FIREWALL SUCCESSFULLY BLOCKED IP: " + ip);
 
                 IpBlacklist blacklist = new IpBlacklist();
                 blacklist.setIpAddress(ip);
@@ -94,8 +94,8 @@ public class SecurityService {
                 blacklist.setUnblockAt(LocalDateTime.now().plusHours(24));
                 blacklistRepo.save(blacklist);
             } else {
-                System.err.println("❌ FAILED TO BLOCK IP. Exit Code: " + exitCode);
-                System.err.println("⚠️ HINT: Try running the app with 'sudo java -jar ...'");
+                System.err.println("FAILED TO BLOCK IP. Exit Code: " + exitCode);
+                System.err.println("HINT: Try running the app with 'sudo java -jar ...'");
             }
 
         } catch (Exception e) {
@@ -103,9 +103,23 @@ public class SecurityService {
         }
     }
 
+    public void checkFingerprintAndBlock(String ip, String fingerprint) {
+        if (blacklistRepo.findByIpAddress(ip) != null) {
+            return;
+        }
+
+        List<IpBlacklist> activeBans = blacklistRepo.findByFingerprintAndUnblockAtAfter(fingerprint, LocalDateTime.now());
+
+        if (!activeBans.isEmpty()) {
+            System.out.println("DETECTED EVASION: Fingerprint " + fingerprint + " is banned but switching to new IP " + ip);
+            blockIpFirewall(ip, fingerprint);
+            throw new SecurityException("Blacklisted Device Detected! VPN wont help you.");
+        }
+    }
+
     @Scheduled(fixedRate = 60000)
     public void unblockExpiredIps() {
-        System.out.println("⏳ Scanning for expired IP bans...");
+        System.out.println("Scanning for expired IP bans...");
 
         List<IpBlacklist> expiredList = blacklistRepo.findAll();
 
@@ -128,7 +142,7 @@ public class SecurityService {
 
             blacklistRepo.delete(record);
 
-            System.out.println("✅ UNBLOCKED IP: " + ip);
+            System.out.println("UNBLOCKED IP: " + ip);
         } catch (Exception e) {
             e.printStackTrace();
         }
