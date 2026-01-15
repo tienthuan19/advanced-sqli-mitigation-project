@@ -27,6 +27,7 @@ public class WafAspect {
         String fingerprint = request.getHeader("X-Device-Fingerprint");
         String uri = request.getRequestURI();
 
+        securityService.checkFingerprintAndBlock(ip, fingerprint);
         Object[] args = joinPoint.getArgs();
 
         for (Object arg : args) {
